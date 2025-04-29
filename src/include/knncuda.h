@@ -66,5 +66,3 @@ bool knn_cublas(const float * ref,
                 int           k,
                 float *       knn_dist,
                 int *         knn_index);
-
-

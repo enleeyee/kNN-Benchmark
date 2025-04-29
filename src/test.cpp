@@ -6,7 +6,7 @@
 #include <sys/time.h>
 #include <time.h>
 
-#include "knncuda.h"
+#include "include/knncuda.h"
 
 
 /**

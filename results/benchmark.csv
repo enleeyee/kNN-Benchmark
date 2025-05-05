@@ -1,0 +1,4 @@
+label,ref_nb,query_nb,dim,time_sec
+Small,1000,200,32,0.00360
+Medium,10000,1000,64,0.00726
+Large,100000,10000,128,0.22591

@@ -38,6 +38,18 @@ void initialize_data(float * ref,
     }
 }
 
+struct DatasetConfig {
+    int ref_nb;
+    int query_nb;
+    int dim;
+    const char* label;
+};
+
+DatasetConfig configs[] = {
+    {1000, 200, 32,  "Small"},
+    {10000, 1000, 64, "Medium"},
+    {100000, 10000, 128, "Large"}
+};
 
 /**
  * Computes the Euclidean distance between a reference point and a query point.
@@ -297,6 +309,13 @@ int main(void) {
     const int dim      = 128;
     const int k        = 16;
 
+    FILE* out = fopen("results/benchmark.csv", "w");
+    if (!out) {
+        printf("Error: Unable to create results/benchmark.csv\n");
+        return EXIT_FAILURE;
+    }
+    fprintf(out, "label,ref_nb,query_nb,dim,time_sec\n");
+
     // Display
     printf("PARAMETERS\n");
     printf("- Number reference points : %d\n",   ref_nb);
@@ -346,11 +365,50 @@ int main(void) {
     test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_cuda_texture, "knn_cuda_texture", 100); 
     test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_cublas,       "knn_cublas",       100); 
 
+    for (auto& config : configs) {
+        int ref_nb   = config.ref_nb;
+        int query_nb = config.query_nb;
+        int dim      = config.dim;
+
+        printf("\nBENCHMARKING: %s Dataset\n", config.label);
+        printf("- Reference Points: %d\n", ref_nb);
+        printf("- Query Points    : %d\n", query_nb);
+        printf("- Dimensions      : %d\n", dim);
+        printf("- k               : %d\n\n", k);
+
+        // Allocate memory
+        float *ref       = (float*) malloc(ref_nb * dim * sizeof(float));
+        float *query     = (float*) malloc(query_nb * dim * sizeof(float));
+        float *knn_dist  = (float*) malloc(query_nb * k * sizeof(float));
+        int   *knn_index = (int*)   malloc(query_nb * k * sizeof(int));
+
+        // Initialize data
+        initialize_data(ref, ref_nb, query, query_nb, dim);
+
+        // Time CUDA global version (you can test others too)
+        struct timeval tic, toc;
+        gettimeofday(&tic, NULL);
+        knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index);
+        gettimeofday(&toc, NULL);
+        double elapsed_time = (toc.tv_sec - tic.tv_sec) + (toc.tv_usec - tic.tv_usec) / 1e6;
+
+        printf("[CUDA GLOBAL] Time: %.5f seconds\n", elapsed_time);
+        fprintf(out, "%s,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, elapsed_time);
+
+        // Clean up
+        free(ref);
+        free(query);
+        free(knn_dist);
+        free(knn_index);
+    }
+
     // Deallocate memory 
     free(ref);
     free(query);
     free(knn_dist);
     free(knn_index);
+
+    fclose(out);
 
     return EXIT_SUCCESS;
 }

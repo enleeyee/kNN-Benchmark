@@ -418,6 +418,15 @@ int main(void) {
         printf("[CUDA GLOBAL][MANHATTAN] Time: %.5f seconds\n", time_manhattan);
         fprintf(out, "%s_MANHATTAN,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, time_manhattan);
     
+        // Benchmark CUDA Global - COSINE
+        gettimeofday(&tic, NULL);
+        knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, COSINE);
+        gettimeofday(&toc, NULL);
+        double time_cosine = (toc.tv_sec - tic.tv_sec) + (toc.tv_usec - tic.tv_usec) / 1e6;
+    
+        printf("[CUDA GLOBAL][COSINE] Time: %.5f seconds\n", time_cosine);
+        fprintf(out, "%s_COSINE,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, time_cosine);
+    
         free(ref);
         free(query);
         free(knn_dist);

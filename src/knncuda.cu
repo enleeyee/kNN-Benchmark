@@ -82,17 +82,31 @@ __global__ void compute_distances(float * ref,
 
         // Compute the difference between the two matrixes; each thread computes one element of the block sub-matrix
         if (cond2 && cond1) {
-            for (int k = 0; k < BLOCK_DIM; ++k){
-                float tmp = shared_A[k][ty] - shared_B[k][tx];
+            float dot_product = 0.f;
+            float normA = 0.f;
+            float normB = 0.f;
+        
+            for (int k = 0; k < BLOCK_DIM; ++k) {
+                float a = shared_A[k][ty];
+                float b = shared_B[k][tx];
                 if (metric_type == EUCLIDEAN) {
+                    float tmp = a - b;
                     ssd += tmp * tmp;
                 } else if (metric_type == MANHATTAN) {
-                    ssd += fabsf(tmp);
+                    ssd += fabsf(a - b);
                 } else if (metric_type == COSINE) {
-                    // You will need dot product and norms for cosine
-                    // This is more complex – you’ll calculate: 1 - (A·B) / (||A|| * ||B||)
-                    ssd += tmp * tmp;
+                    // Compute dot product and norms for cosine
+                    // Calculate: 1 - (A·B) / (||A|| * ||B||)
+                    dot_product += a * b;
+                    normA += a * a;
+                    normB += b * b;
                 }
+            }
+        
+            if (metric_type == COSINE) {
+                float denom = sqrtf(normA) * sqrtf(normB);
+                // Avoid division by zero
+                ssd = (denom > 1e-5f) ? (1.0f - (dot_product / denom)) : 1.0f;
             }
         }
 

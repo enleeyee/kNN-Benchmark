@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>k-NN WebGPU Visualization</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #111; overflow: hidden; }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      image-rendering: pixelated;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="webgpuCanvas"></canvas>
+  <script type="module">
+    const canvas = document.getElementById('webgpuCanvas');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const adapter = await navigator.gpu.requestAdapter();
+    const device = await adapter.requestDevice();
+    const context = canvas.getContext('webgpu');
+    const format = navigator.gpu.getPreferredCanvasFormat();
+    context.configure({ device, format, alphaMode: 'opaque' });
+
+    function normalize(x, y) {
+      return [(x / 10) * 1.8 - 0.9, (y / 10) * 1.8 - 0.9];
+    }
+
+    const raw = await fetch('results/visual_knn.csv').then(r => r.text());
+    const lines = raw.trim().split('\n').slice(1);
+    const points = lines.map(line => {
+      const [type, x, y, query_id] = line.split(',');
+      const [nx, ny] = normalize(parseFloat(x), parseFloat(y));
+      return { type, x: nx, y: ny, query_id: +query_id || 0 };
+    });
+
+    const ref = points.filter(p => p.type === 'ref');
+    const queries = points.filter(p => p.type === 'query');
+    const neighbors = points.filter(p => p.type === 'neighbor');
+
+    const shaders = {
+      code: `
+      struct VertexOut {
+        @builtin(position) pos: vec4<f32>,
+        @location(0) color: vec3<f32>
+      };
+
+      @vertex
+      fn vs(@location(0) pos: vec2<f32>, @location(1) color: vec3<f32>) -> VertexOut {
+          var out: VertexOut;
+          out.pos = vec4<f32>(pos, 0.0, 1.0);
+          out.color = color;
+          return out;
+      }
+
+      @fragment
+      fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+        return vec4<f32>(in.color, 1.0);
+      }
+      `
+    };
+
+    const pipeline = device.createRenderPipeline({
+      layout: 'auto',
+      vertex: {
+        module: device.createShaderModule(shaders),
+        entryPoint: 'vs',
+        buffers: [{
+          arrayStride: 5 * 4,
+          attributes: [
+            { shaderLocation: 0, offset: 0, format: 'float32x2' },
+            { shaderLocation: 1, offset: 8, format: 'float32x3' }
+          ]
+        }]
+      },
+      fragment: {
+        module: device.createShaderModule(shaders),
+        entryPoint: 'fs',
+        targets: [{ format }]
+      },
+      primitive: { topology: 'triangle-list' }
+    });
+
+    function makeGPUBuffer(data, size = 0.02) {
+      const vertices = [];
+      for (const { x, y, color } of data) {
+        // Create a triangle centered at (x, y)
+        vertices.push(
+          x, y + size, ...color,
+          x - size, y - size, ...color,
+          x + size, y - size, ...color
+        );
+      }
+      const f32 = new Float32Array(vertices);
+      const buf = device.createBuffer({
+        size: f32.byteLength,
+        usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        mappedAtCreation: true
+      });
+      new Float32Array(buf.getMappedRange()).set(f32);
+      buf.unmap();
+      return buf;
+    }
+
+    const colors = {
+      ref: [0.6, 0.6, 0.6],
+      query: [1.0, 0.0, 0.0],
+      neighbor: [0.0, 0.5, 1.0]
+    };
+
+    const refBuf = makeGPUBuffer(ref.map(p => ({ ...p, color: colors.ref })));
+    const queryFrames = queries.map((q, i) => {
+      const queryBuf = makeGPUBuffer([{ ...q, color: colors.query }]);
+      const nbs = neighbors.filter(n => n.query_id === i).map(n => ({ ...n, color: colors.neighbor }));
+      const nbBuf = makeGPUBuffer(nbs);
+      return { queryBuf, nbBuf, nbLen: nbs.length };
+    });
+
+    function drawFrame(i) {
+      const encoder = device.createCommandEncoder();
+      const view = context.getCurrentTexture().createView();
+      const pass = encoder.beginRenderPass({
+        colorAttachments: [{
+          view,
+          loadOp: 'clear',
+          clearValue: { r: 0.1, g: 0.1, b: 0.1, a: 1 },
+          storeOp: 'store'
+        }]
+      });
+
+      pass.setPipeline(pipeline);
+      pass.setVertexBuffer(0, refBuf);
+      pass.draw(ref.length * 3);
+
+      pass.setVertexBuffer(0, queryFrames[i].queryBuf);
+      pass.draw(3);
+
+      pass.setVertexBuffer(0, queryFrames[i].nbBuf);
+      pass.draw(queryFrames[i].nbLen * 3);
+
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+    }
+
+    let current = 0;
+    function animate() {
+      drawFrame(current);
+      current = (current + 1) % queryFrames.length;
+      setTimeout(animate, 1000);
+    }
+
+    animate();
+  </script>
+</body>
+</html>

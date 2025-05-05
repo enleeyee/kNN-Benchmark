@@ -323,6 +323,12 @@ int main(void) {
     const int dim      = 128;
     const int k        = 16;
 
+    // Parameters for visualization
+    const int ref_nb_vis   = 100;
+    const int query_nb_vis = 3;
+    const int dim_vis      = 2;
+    const int k_vis        = 5;
+
     FILE* out = fopen("results/benchmark.csv", "w");
     if (!out) {
         printf("Error: Unable to create results/benchmark.csv\n");
@@ -440,6 +446,45 @@ int main(void) {
     free(knn_index);
 
     fclose(out);
+
+    // Visualization output (2D scatter plot + animation)
+    FILE* vis_file = fopen("results/visual_knn.csv", "w");
+    if (!vis_file) {
+        printf("Error: Unable to create results/visual_knn.csv\n");
+        return EXIT_FAILURE;
+    }
+
+    // Generate small 2D dataset for plotting
+    float* ref_vis   = (float*) malloc(ref_nb_vis * dim_vis * sizeof(float));
+    float* query_vis = (float*) malloc(query_nb_vis * dim_vis * sizeof(float));
+    float* dist_vis  = (float*) malloc(query_nb_vis * k_vis * sizeof(float));
+    int*   idx_vis   = (int*)   malloc(query_nb_vis * k_vis * sizeof(int));
+
+    initialize_data(ref_vis, ref_nb_vis, query_vis, query_nb_vis, dim_vis);
+
+    if (!knn_cuda_global(ref_vis, ref_nb_vis, query_vis, query_nb_vis, dim_vis, k_vis, dist_vis, idx_vis, EUCLIDEAN)) {
+        printf("Error: kNN visualization computation failed\n");
+        return EXIT_FAILURE;
+    }
+
+    // Write CSV headers
+    fprintf(vis_file, "type,x,y,query_id\n");
+    for (int i = 0; i < ref_nb_vis; ++i)
+        fprintf(vis_file, "ref,%f,%f,\n", ref_vis[i * dim_vis + 0], ref_vis[i * dim_vis + 1]);
+    for (int i = 0; i < query_nb_vis; ++i)
+        fprintf(vis_file, "query,%f,%f,%d\n", query_vis[i * dim_vis + 0], query_vis[i * dim_vis + 1], i);
+    for (int i = 0; i < query_nb_vis; ++i) {
+        for (int j = 0; j < k_vis; ++j) {
+            int ref_i = idx_vis[j * query_nb_vis + i];
+            fprintf(vis_file, "neighbor,%f,%f,%d\n", ref_vis[ref_i * dim_vis + 0], ref_vis[ref_i * dim_vis + 1], i);
+        }
+    }
+
+    fclose(vis_file);
+    free(ref_vis);
+    free(query_vis);
+    free(dist_vis);
+    free(idx_vis);
 
     return EXIT_SUCCESS;
 }

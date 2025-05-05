@@ -295,6 +295,20 @@ bool test(const float * ref,
     return true;
 }
 
+// Wrapper function for knn_cuda_global with EUCLIDEAN metric
+bool knn_cuda_global_euclidean(const float* ref, int ref_nb,
+    const float* query, int query_nb,
+    int dim, int k,
+    float* knn_dist, int* knn_index) {
+return knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, EUCLIDEAN);
+}
+
+bool knn_cuda_global_manhattan(const float* ref, int ref_nb,
+    const float* query, int query_nb,
+    int dim, int k,
+    float* knn_dist, int* knn_index) {
+    return knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, MANHATTAN);
+}
 
 /**
  * 1. Create the synthetic data (reference and query points).
@@ -361,7 +375,8 @@ int main(void) {
     // Test all k-NN functions
     printf("TESTS\n");
     test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_c,            "knn_c",              2);
-    test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_cuda_global,  "knn_cuda_global",  100); 
+    test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index,
+        &knn_cuda_global_euclidean, "knn_cuda_global", 100);
     test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_cuda_texture, "knn_cuda_texture", 100); 
     test(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, &knn_cublas,       "knn_cublas",       100); 
 
@@ -375,27 +390,34 @@ int main(void) {
         printf("- Query Points    : %d\n", query_nb);
         printf("- Dimensions      : %d\n", dim);
         printf("- k               : %d\n\n", k);
-
+    
         // Allocate memory
         float *ref       = (float*) malloc(ref_nb * dim * sizeof(float));
         float *query     = (float*) malloc(query_nb * dim * sizeof(float));
         float *knn_dist  = (float*) malloc(query_nb * k * sizeof(float));
         int   *knn_index = (int*)   malloc(query_nb * k * sizeof(int));
-
-        // Initialize data
+    
         initialize_data(ref, ref_nb, query, query_nb, dim);
-
-        // Time CUDA global version (you can test others too)
+    
+        // Benchmark CUDA Global - EUCLIDEAN
         struct timeval tic, toc;
         gettimeofday(&tic, NULL);
-        knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index);
+        knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, EUCLIDEAN);
         gettimeofday(&toc, NULL);
-        double elapsed_time = (toc.tv_sec - tic.tv_sec) + (toc.tv_usec - tic.tv_usec) / 1e6;
-
-        printf("[CUDA GLOBAL] Time: %.5f seconds\n", elapsed_time);
-        fprintf(out, "%s,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, elapsed_time);
-
-        // Clean up
+        double time_euclidean = (toc.tv_sec - tic.tv_sec) + (toc.tv_usec - tic.tv_usec) / 1e6;
+    
+        printf("[CUDA GLOBAL][EUCLIDEAN] Time: %.5f seconds\n", time_euclidean);
+        fprintf(out, "%s_EUCLIDEAN,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, time_euclidean);
+    
+        // Benchmark CUDA Global - MANHATTAN
+        gettimeofday(&tic, NULL);
+        knn_cuda_global(ref, ref_nb, query, query_nb, dim, k, knn_dist, knn_index, MANHATTAN);
+        gettimeofday(&toc, NULL);
+        double time_manhattan = (toc.tv_sec - tic.tv_sec) + (toc.tv_usec - tic.tv_usec) / 1e6;
+    
+        printf("[CUDA GLOBAL][MANHATTAN] Time: %.5f seconds\n", time_manhattan);
+        fprintf(out, "%s_MANHATTAN,%d,%d,%d,%.5f\n", config.label, ref_nb, query_nb, dim, time_manhattan);
+    
         free(ref);
         free(query);
         free(knn_dist);

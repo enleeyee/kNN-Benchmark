@@ -1,8 +1,15 @@
+#include <math.h>
 #include <stdio.h>
 #include <cuda.h>
 #include <cublas.h>
 
 #define BLOCK_DIM 16
+
+enum DistanceMetric {
+    EUCLIDEAN = 0,
+    MANHATTAN = 1,
+    COSINE = 2
+};
 
 
 /**
@@ -24,7 +31,8 @@ __global__ void compute_distances(float * ref,
                                   int     query_width,
                                   int     query_pitch,
                                   int     height,
-                                  float * dist) {
+                                  float * dist,
+                                  DistanceMetric metric_type) {
 
     // Declaration of the shared memory arrays As and Bs used to store the sub-matrix of A and B
     __shared__ float shared_A[BLOCK_DIM][BLOCK_DIM];
@@ -76,7 +84,15 @@ __global__ void compute_distances(float * ref,
         if (cond2 && cond1) {
             for (int k = 0; k < BLOCK_DIM; ++k){
                 float tmp = shared_A[k][ty] - shared_B[k][tx];
-                ssd += tmp*tmp;
+                if (metric_type == EUCLIDEAN) {
+                    ssd += tmp * tmp;
+                } else if (metric_type == MANHATTAN) {
+                    ssd += fabsf(tmp);
+                } else if (metric_type == COSINE) {
+                    // You will need dot product and norms for cosine
+                    // This is more complex – you’ll calculate: 1 - (A·B) / (||A|| * ||B||)
+                    ssd += tmp * tmp;
+                }
             }
         }
 
@@ -275,7 +291,8 @@ bool knn_cuda_global(const float * ref,
                      int           dim,
                      int           k,
                      float *       knn_dist,
-                     int *         knn_index) {
+                     int *         knn_index,
+                     DistanceMetric metric_type) {
 
     // Constants
     const unsigned int size_of_float = sizeof(float);
@@ -354,7 +371,7 @@ bool knn_cuda_global(const float * ref,
     dim3 grid0(query_nb / BLOCK_DIM, ref_nb / BLOCK_DIM, 1);
     if (query_nb % BLOCK_DIM != 0) grid0.x += 1;
     if (ref_nb   % BLOCK_DIM != 0) grid0.y += 1;
-    compute_distances<<<grid0, block0>>>(ref_dev, ref_nb, ref_pitch, query_dev, query_nb, query_pitch, dim, dist_dev);
+    compute_distances<<<grid0, block0>>>(ref_dev, ref_nb, ref_pitch, query_dev, query_nb, query_pitch, dim, dist_dev, metric_type);
     if (cudaGetLastError() != cudaSuccess) {
         printf("ERROR: Unable to execute kernel\n");
         cudaFree(ref_dev);

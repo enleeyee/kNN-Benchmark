@@ -1,3 +1,10 @@
+
+enum DistanceMetric {
+    EUCLIDEAN = 0,
+    MANHATTAN = 1,
+    COSINE = 2
+};
+
 /**
  * For each input query point, locates the k-NN (indexes and distances) among the reference points.
  * This implementation uses global memory to store reference and query points.
@@ -18,7 +25,8 @@ bool knn_cuda_global(const float * ref,
                      int           dim,
                      int           k,
                      float *       knn_dist,
-                     int *         knn_index);
+                     int *         knn_index,
+                     DistanceMetric metric_type);
 
 
 /**
